@@ -11,7 +11,7 @@ const BASE_URL: &str = "https://search.censys.io/api/v2";
 fn main() {
     let matches = Command::new("censys-search")
         .version("1.0")
-        .about("Wrapper for the Censys Search API")
+        .about("Censys Search API wrapper utility")
         .subcommand_required(true)
         .arg_required_else_help(true)
         .arg(
@@ -25,56 +25,106 @@ fn main() {
         .subcommand(
             Command::new("ip")
                 .about("Search based on IP address")
-                .arg(arg!([address]).required(true)),
+                .arg_required_else_help(true)
+                .arg(arg!([address] "IP address").required(true)),
         )
         .subcommand(
             Command::new("query")
                 .about("Search based on query")
-                .arg(arg!([query]).required(true)),
+                .arg_required_else_help(true)
+                .arg(arg!([query] "Query using the Censys Search query language").required(true)),
+        )
+        .subcommand(
+            Command::new("cert")
+                .about("Search based on TLS certificate")
+                .arg_required_else_help(true)
+                .subcommand(
+                    Command::new("hosts")
+                        .about("Search for hosts")
+                        .arg_required_else_help(true)
+                        .arg(
+                            arg!([fingerprint] "SHA256 fingerprint of the certificate")
+                                .required(true),
+                        ),
+                )
+                .subcommand(
+                    Command::new("comments")
+                        .about("Search for comments")
+                        .arg_required_else_help(true)
+                        .arg(
+                            arg!([fingerprint] "SHA256 fingerprint of the certificate")
+                                .required(true),
+                        ),
+                ),
         )
         .get_matches();
 
-    let api_id = if let Some(value) = matches.get_one::<String>("api_id") {
-        value.to_owned()
-    } else {
-        get_env_or_exit("CENSYS_API_ID")
+    let api_id = match matches.get_one::<String>("api_id") {
+        Some(value) => value.to_owned(),
+        None => get_env_or_exit("CENSYS_API_ID"),
     };
-    let secret = if let Some(value) = matches.get_one::<String>("secret") {
-        value.to_owned()
-    } else {
-        get_env_or_exit("CENSYS_SECRET")
+    let secret = match matches.get_one::<String>("secret") {
+        Some(value) => value.to_owned(),
+        None => get_env_or_exit("CENSYS_SECRET"),
     };
     let token = base64::encode(format!("{}:{}", api_id, secret));
     let client = Client::new();
 
     match matches.subcommand() {
-        Some(("ip", sub_match)) => {
-            let address = sub_match
+        Some(("ip", ip_match)) => {
+            let address = ip_match
                 .get_one::<String>("address")
                 .expect("Argument is required");
-            let uri = make_uri_from_ip(&address);
+            let uri = make_uri_from_ip(address);
             let json_response = send_request(&client, &token, &uri);
             println!("{}", json_response);
         }
-        Some(("query", sub_match)) => {
-            let query = sub_match
+        Some(("query", query_match)) => {
+            let query = query_match
                 .get_one::<String>("query")
                 .expect("Argument is required");
-            let uri = make_uri_from_query(&query);
+            let uri = make_uri_from_query(query);
             let json_response = send_request(&client, &token, &uri);
             println!("{}", json_response);
         }
+        Some(("cert", cert_match)) => match cert_match.subcommand() {
+            Some(("hosts", hosts_match)) => {
+                let fingerprint = hosts_match
+                    .get_one::<String>("fingerprint")
+                    .expect("Argument is required");
+                let uri = make_hosts_uri_from_cert_fingerprint(fingerprint);
+                let json_response = send_request(&client, &token, &uri);
+                println!("{}", json_response);
+            }
+            Some(("comments", comments_match)) => {
+                let fingerprint = comments_match
+                    .get_one::<String>("fingerprint")
+                    .expect("Argument is required");
+                let uri = make_comments_uri_from_cert_fingerprint(fingerprint);
+                let json_response = send_request(&client, &token, &uri);
+                println!("{}", json_response);
+            }
+            _ => unreachable!("All subcommands exhausted"),
+        },
         _ => unreachable!("All subcommands exhausted"),
     }
 }
 
 fn make_uri_from_query(query: &str) -> String {
-    let query = urlencoding::encode(&query).into_owned();
+    let query = urlencoding::encode(query).into_owned();
     format!("/hosts/search?q={}", query)
 }
 
+fn make_hosts_uri_from_cert_fingerprint(fingerprint: &str) -> String {
+    format!("/certificates/{}/hosts", fingerprint)
+}
+
+fn make_comments_uri_from_cert_fingerprint(fingerprint: &str) -> String {
+    format!("/certificates/{}/comments", fingerprint)
+}
+
 fn make_uri_from_ip(ip: &str) -> String {
-    let ip = urlencoding::encode(ip).into_owned();
+    let ip = urlencoding::encode(ip).to_string();
     format!("/hosts/{}", ip)
 }
 
