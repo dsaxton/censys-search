@@ -4,8 +4,6 @@ use reqwest::header::{ACCEPT, AUTHORIZATION};
 use serde_json::Value;
 use std::{env, process};
 
-// services.service_name: elasticsearch and services.http.response.headers.status: 200
-
 const BASE_URL: &str = "https://search.censys.io/api/v2";
 
 fn main() {
@@ -71,37 +69,37 @@ fn main() {
     let client = Client::new();
 
     match matches.subcommand() {
-        Some(("ip", ip_match)) => {
-            let address = ip_match
+        Some(("ip", ip_command)) => {
+            let address = ip_command
                 .get_one::<String>("address")
                 .expect("Argument is required");
-            let uri = make_uri_from_ip(address);
-            let json_response = send_request(&client, &token, &uri);
+            let path = make_path_from_ip(address);
+            let json_response = send_request(&client, &token, &path);
             println!("{}", json_response);
         }
-        Some(("query", query_match)) => {
-            let query = query_match
+        Some(("query", query_command)) => {
+            let query = query_command
                 .get_one::<String>("query")
                 .expect("Argument is required");
-            let uri = make_uri_from_query(query);
-            let json_response = send_request(&client, &token, &uri);
+            let path = make_path_from_query(query);
+            let json_response = send_request(&client, &token, &path);
             println!("{}", json_response);
         }
-        Some(("cert", cert_match)) => match cert_match.subcommand() {
-            Some(("hosts", hosts_match)) => {
-                let fingerprint = hosts_match
+        Some(("cert", cert_command)) => match cert_command.subcommand() {
+            Some(("hosts", hosts_command)) => {
+                let fingerprint = hosts_command
                     .get_one::<String>("fingerprint")
                     .expect("Argument is required");
-                let uri = make_hosts_uri_from_cert_fingerprint(fingerprint);
-                let json_response = send_request(&client, &token, &uri);
+                let path = make_hosts_path_from_cert_fingerprint(fingerprint);
+                let json_response = send_request(&client, &token, &path);
                 println!("{}", json_response);
             }
-            Some(("comments", comments_match)) => {
-                let fingerprint = comments_match
+            Some(("comments", comments_command)) => {
+                let fingerprint = comments_command
                     .get_one::<String>("fingerprint")
                     .expect("Argument is required");
-                let uri = make_comments_uri_from_cert_fingerprint(fingerprint);
-                let json_response = send_request(&client, &token, &uri);
+                let path = make_comments_path_from_cert_fingerprint(fingerprint);
+                let json_response = send_request(&client, &token, &path);
                 println!("{}", json_response);
             }
             _ => unreachable!("All subcommands exhausted"),
@@ -110,27 +108,27 @@ fn main() {
     }
 }
 
-fn make_uri_from_query(query: &str) -> String {
+fn make_path_from_query(query: &str) -> String {
     let query = urlencoding::encode(query).into_owned();
     format!("/hosts/search?q={}", query)
 }
 
-fn make_hosts_uri_from_cert_fingerprint(fingerprint: &str) -> String {
+fn make_hosts_path_from_cert_fingerprint(fingerprint: &str) -> String {
     format!("/certificates/{}/hosts", fingerprint)
 }
 
-fn make_comments_uri_from_cert_fingerprint(fingerprint: &str) -> String {
+fn make_comments_path_from_cert_fingerprint(fingerprint: &str) -> String {
     format!("/certificates/{}/comments", fingerprint)
 }
 
-fn make_uri_from_ip(ip: &str) -> String {
+fn make_path_from_ip(ip: &str) -> String {
     let ip = urlencoding::encode(ip).to_string();
     format!("/hosts/{}", ip)
 }
 
-fn send_request(client: &Client, token: &str, uri: &str) -> Value {
+fn send_request(client: &Client, token: &str, path: &str) -> Value {
     let response = client
-        .get(format!("{}{}", BASE_URL, uri))
+        .get(format!("{}{}", BASE_URL, path))
         .header(ACCEPT, "application/json")
         .header(AUTHORIZATION, format!("Basic {}", token))
         .send();
