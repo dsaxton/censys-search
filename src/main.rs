@@ -9,7 +9,7 @@ const BASE_URL: &str = "https://search.censys.io/api/v2";
 fn main() {
     let arg_matches = Command::new("censys-search")
         .version("1.0")
-        .about("Censys Search API wrapper utility")
+        .about("Censys Search API utility")
         .subcommand_required(true)
         .arg_required_else_help(true)
         .arg(
@@ -39,7 +39,7 @@ fn main() {
                 .arg_required_else_help(true)
                 .subcommand(
                     Command::new("hosts")
-                        .about("Search for hosts")
+                        .about("Search for hosts related to the certificate")
                         .arg_required_else_help(true)
                         .arg(
                             arg!([fingerprint] "SHA256 fingerprint of the certificate")
@@ -48,7 +48,7 @@ fn main() {
                 )
                 .subcommand(
                     Command::new("comments")
-                        .about("Search for comments")
+                        .about("Search for comments related to the certificate")
                         .arg_required_else_help(true)
                         .arg(
                             arg!([fingerprint] "SHA256 fingerprint of the certificate")
