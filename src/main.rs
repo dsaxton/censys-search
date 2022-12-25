@@ -7,7 +7,7 @@ use std::{env, process};
 const BASE_URL: &str = "https://search.censys.io/api/v2";
 
 fn main() {
-    let matches = Command::new("censys-search")
+    let arg_matches = Command::new("censys-search")
         .version("1.0")
         .about("Censys Search API wrapper utility")
         .subcommand_required(true)
@@ -21,16 +21,17 @@ fn main() {
                 .required(false),
         )
         .subcommand(
+            Command::new("query")
+                .about("Search based on query")
+                .arg_required_else_help(true)
+                .arg(arg!(-i --iterate "Whether or not to exhaust all available pages in the result").num_args(0))
+                .arg(arg!([query] "Query using the Censys Search query language").required(true)),
+        )
+        .subcommand(
             Command::new("ip")
                 .about("Search based on IP address")
                 .arg_required_else_help(true)
                 .arg(arg!([address] "IP address").required(true)),
-        )
-        .subcommand(
-            Command::new("query")
-                .about("Search based on query")
-                .arg_required_else_help(true)
-                .arg(arg!([query] "Query using the Censys Search query language").required(true)),
         )
         .subcommand(
             Command::new("cert")
@@ -57,31 +58,43 @@ fn main() {
         )
         .get_matches();
 
-    let api_id = match matches.get_one::<String>("api_id") {
+    let api_id = match arg_matches.get_one::<String>("api_id") {
         Some(value) => value.to_owned(),
         None => get_env_or_exit("CENSYS_API_ID"),
     };
-    let secret = match matches.get_one::<String>("secret") {
+    let secret = match arg_matches.get_one::<String>("secret") {
         Some(value) => value.to_owned(),
         None => get_env_or_exit("CENSYS_SECRET"),
     };
     let token = base64::encode(format!("{}:{}", api_id, secret));
     let client = Client::new();
 
-    match matches.subcommand() {
+    match arg_matches.subcommand() {
+        Some(("query", query_command)) => {
+            let query = query_command
+                .get_one::<String>("query")
+                .expect("Argument is required");
+            // FIXME: this is always true?
+            let iterate = query_command.contains_id("iterate");
+            let path = make_path_from_query(query);
+            let mut json_response = send_request(&client, &token, &path);
+            println!("{}", json_response);
+            if !iterate {
+                return;
+            }
+            let mut cursor = get_cursor_from_json(&json_response);
+            while cursor.is_some() {
+                let path = format!("{}&cursor={}", make_path_from_query(query), cursor.unwrap());
+                json_response = send_request(&client, &token, &path);
+                println!("{}", json_response);
+                cursor = get_cursor_from_json(&json_response);
+            }
+        }
         Some(("ip", ip_command)) => {
             let address = ip_command
                 .get_one::<String>("address")
                 .expect("Argument is required");
             let path = make_path_from_ip(address);
-            let json_response = send_request(&client, &token, &path);
-            println!("{}", json_response);
-        }
-        Some(("query", query_command)) => {
-            let query = query_command
-                .get_one::<String>("query")
-                .expect("Argument is required");
-            let path = make_path_from_query(query);
             let json_response = send_request(&client, &token, &path);
             println!("{}", json_response);
         }
@@ -105,6 +118,14 @@ fn main() {
             _ => unreachable!("All subcommands exhausted"),
         },
         _ => unreachable!("All subcommands exhausted"),
+    }
+}
+
+fn get_cursor_from_json(json_response: &Value) -> Option<String> {
+    let cursor = &json_response["result"]["links"]["next"];
+    match cursor {
+        Value::String(value) if !value.is_empty() => Some(value.to_owned()),
+        _ => None,
     }
 }
 
