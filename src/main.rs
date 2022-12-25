@@ -1,4 +1,4 @@
-use clap::{arg, Command};
+use clap::{arg, ArgAction, Command};
 use reqwest::blocking::Client;
 use reqwest::header::{ACCEPT, AUTHORIZATION};
 use serde_json::Value;
@@ -24,7 +24,7 @@ fn main() {
             Command::new("query")
                 .about("Search based on query")
                 .arg_required_else_help(true)
-                .arg(arg!(-i --iterate "Whether or not to exhaust all available pages in the result").num_args(0))
+                .arg(arg!(-i --iterate "Whether or not to exhaust all available pages in the result").action(ArgAction::SetTrue))
                 .arg(arg!([query] "Query using the Censys Search query language").required(true)),
         )
         .subcommand(
@@ -74,8 +74,9 @@ fn main() {
             let query = query_command
                 .get_one::<String>("query")
                 .expect("Argument is required");
-            // FIXME: this is always true?
-            let iterate = query_command.contains_id("iterate");
+            let iterate = query_command
+                .get_one::<bool>("iterate")
+                .expect("Argument always has a value");
             let path = make_path_from_query(query);
             let mut json_response = send_request(&client, &token, &path);
             println!("{}", json_response);
