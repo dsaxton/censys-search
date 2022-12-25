@@ -144,7 +144,6 @@ fn make_comments_path_from_cert_fingerprint(fingerprint: &str) -> String {
 }
 
 fn make_path_from_ip(ip: &str) -> String {
-    let ip = urlencoding::encode(ip).to_string();
     format!("/hosts/{}", ip)
 }
 
