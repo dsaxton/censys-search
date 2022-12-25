@@ -1,4 +1,5 @@
 /target
 *.sh
+*.txt
 *.json
 *.jsonl
