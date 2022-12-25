@@ -24,7 +24,10 @@ fn main() {
             Command::new("query")
                 .about("Search based on query")
                 .arg_required_else_help(true)
-                .arg(arg!(-i --iterate "Whether or not to exhaust all available pages in the result").action(ArgAction::SetTrue))
+                .arg(
+                    arg!(-p --page "Whether or not to fetch all available pages in the result")
+                        .action(ArgAction::SetTrue),
+                )
                 .arg(arg!([query] "Query using the Censys Search query language").required(true)),
         )
         .subcommand(
@@ -74,13 +77,13 @@ fn main() {
             let query = query_command
                 .get_one::<String>("query")
                 .expect("Argument is required");
-            let iterate = query_command
-                .get_one::<bool>("iterate")
+            let page = query_command
+                .get_one::<bool>("page")
                 .expect("Argument always has a value");
             let path = make_path_from_query(query);
             let mut json_response = send_request(&client, &token, &path);
             println!("{}", json_response);
-            if !iterate {
+            if !page {
                 return;
             }
             let mut cursor = get_cursor_from_json(&json_response);
