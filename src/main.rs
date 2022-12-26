@@ -13,21 +13,22 @@ fn main() {
         .subcommand_required(true)
         .arg_required_else_help(true)
         .arg(
-            arg!(--api_id <VALUE> "API ID (if not specified CENSYS_API_ID must be set)")
+            arg!(-i --api_id <VALUE> "API ID (if not specified CENSYS_API_ID must be set)")
                 .required(false),
         )
         .arg(
-            arg!(--secret <VALUE> "API secret (if not specified CENSYS_SECRET must be set)")
+            arg!(-s --secret <VALUE> "API secret (if not specified CENSYS_SECRET must be set)")
                 .required(false),
+        )
+        .arg(
+            arg!(-n --no_paging "Disable paging of results")
+                .required(false)
+                .action(ArgAction::SetTrue),
         )
         .subcommand(
             Command::new("query")
                 .about("Search based on query")
                 .arg_required_else_help(true)
-                .arg(
-                    arg!(-p --page "Whether or not to fetch all available pages in the result")
-                        .action(ArgAction::SetTrue),
-                )
                 .arg(arg!([query] "Query using the Censys Search query language").required(true)),
         )
         .subcommand(
@@ -69,6 +70,9 @@ fn main() {
         Some(value) => value.to_owned(),
         None => get_env_or_exit("CENSYS_SECRET"),
     };
+    let no_paging = *arg_matches
+        .get_one::<bool>("no_paging")
+        .expect("Argument always has a value");
     let token = base64::encode(format!("{}:{}", api_id, secret));
     let client = Client::new();
 
@@ -77,30 +81,15 @@ fn main() {
             let query = query_command
                 .get_one::<String>("query")
                 .expect("Argument is required");
-            let page = query_command
-                .get_one::<bool>("page")
-                .expect("Argument always has a value");
             let path = make_path_from_query(query);
-            let mut json_response = send_request(&client, &token, &path);
-            println!("{}", json_response);
-            if !page {
-                return;
-            }
-            let mut cursor = get_cursor_from_json(&json_response);
-            while cursor.is_some() {
-                let path = format!("{}&cursor={}", make_path_from_query(query), cursor.unwrap());
-                json_response = send_request(&client, &token, &path);
-                println!("{}", json_response);
-                cursor = get_cursor_from_json(&json_response);
-            }
+            print_response(&client, &token, &path, no_paging);
         }
         Some(("ip", ip_command)) => {
             let address = ip_command
                 .get_one::<String>("address")
                 .expect("Argument is required");
             let path = make_path_from_ip(address);
-            let json_response = send_request(&client, &token, &path);
-            println!("{}", json_response);
+            print_response(&client, &token, &path, no_paging);
         }
         Some(("cert", cert_command)) => match cert_command.subcommand() {
             Some(("hosts", hosts_command)) => {
@@ -108,16 +97,14 @@ fn main() {
                     .get_one::<String>("fingerprint")
                     .expect("Argument is required");
                 let path = make_hosts_path_from_cert_fingerprint(fingerprint);
-                let json_response = send_request(&client, &token, &path);
-                println!("{}", json_response);
+                print_response(&client, &token, &path, no_paging);
             }
             Some(("comments", comments_command)) => {
                 let fingerprint = comments_command
                     .get_one::<String>("fingerprint")
                     .expect("Argument is required");
                 let path = make_comments_path_from_cert_fingerprint(fingerprint);
-                let json_response = send_request(&client, &token, &path);
-                println!("{}", json_response);
+                print_response(&client, &token, &path, no_paging);
             }
             _ => unreachable!("All subcommands exhausted"),
         },
@@ -125,7 +112,22 @@ fn main() {
     }
 }
 
-fn get_cursor_from_json(json_response: &Value) -> Option<String> {
+fn print_response(client: &Client, token: &str, path: &str, no_paging: bool) {
+    let mut json_response = send_request(client, token, path);
+    println!("{}", json_response);
+    if no_paging {
+        return;
+    }
+    let mut cursor = get_cursor_from_response(&json_response);
+    while cursor.is_some() {
+        let path = format!("{}&cursor={}", path, cursor.unwrap());
+        json_response = send_request(client, token, &path);
+        println!("{}", json_response);
+        cursor = get_cursor_from_response(&json_response);
+    }
+}
+
+fn get_cursor_from_response(json_response: &Value) -> Option<String> {
     let cursor = &json_response["result"]["links"]["next"];
     match cursor {
         Value::String(value) if !value.is_empty() => Some(value.to_owned()),
