@@ -4,7 +4,7 @@ use reqwest::header::{ACCEPT, AUTHORIZATION};
 use serde_json::Value;
 use std::{env, process};
 
-const BASE_URL: &str = "https://search.censys.io/api/v2";
+mod constants;
 
 fn main() {
     let arg_matches = Command::new("censys-search")
@@ -38,6 +38,18 @@ fn main() {
                 .arg(arg!([address] "IP address").required(true)),
         )
         .subcommand(
+            Command::new("dns")
+                .about("Search based on DNS name")
+                .arg_required_else_help(true)
+                .arg(arg!([dns_name] "DNS name").required(true)),
+        )
+        .subcommand(
+            Command::new("asn")
+                .about("Search based on autonomous system number")
+                .arg_required_else_help(true)
+                .arg(arg!([asn] "Autonomous system number").required(true)),
+        )
+        .subcommand(
             Command::new("cert")
                 .about("Search based on TLS certificate")
                 .arg_required_else_help(true)
@@ -59,6 +71,9 @@ fn main() {
                                 .required(true),
                         ),
                 ),
+        )
+        .subcommand(
+            Command::new("fields").about("Show all available Censys Search query language fields"),
         )
         .get_matches();
 
@@ -91,6 +106,22 @@ fn main() {
             let path = make_path_from_ip(address);
             print_response(&client, &token, &path, no_paging);
         }
+        Some(("dns", dns_command)) => {
+            let dns_name = dns_command
+                .get_one::<String>("dns_name")
+                .expect("Argument is required");
+            let query = format!("dns.names: {}", dns_name);
+            let path = make_path_from_query(&query);
+            print_response(&client, &token, &path, no_paging);
+        }
+        Some(("asn", asn_command)) => {
+            let asn = asn_command
+                .get_one::<String>("asn")
+                .expect("Argument is required");
+            let query = format!("autonomous_system.asn: {}", asn);
+            let path = make_path_from_query(&query);
+            print_response(&client, &token, &path, no_paging);
+        }
         Some(("cert", cert_command)) => match cert_command.subcommand() {
             Some(("hosts", hosts_command)) => {
                 let fingerprint = hosts_command
@@ -108,6 +139,9 @@ fn main() {
             }
             _ => unreachable!("All subcommands exhausted"),
         },
+        Some(("fields", _)) => {
+            println!("{}", constants::CENSYS_SEARCH_FIELDS);
+        }
         _ => unreachable!("All subcommands exhausted"),
     }
 }
@@ -154,7 +188,7 @@ fn make_path_from_ip(ip: &str) -> String {
 
 fn send_request(client: &Client, token: &str, path: &str) -> Value {
     let response = client
-        .get(format!("{}{}", BASE_URL, path))
+        .get(format!("{}{}", constants::BASE_URL, path))
         .header(ACCEPT, "application/json")
         .header(AUTHORIZATION, format!("Basic {}", token))
         .send();
