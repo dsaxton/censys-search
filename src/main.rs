@@ -2,7 +2,7 @@ use clap::{arg, ArgAction, Command};
 use reqwest::blocking::Client;
 use reqwest::header::{ACCEPT, AUTHORIZATION};
 use serde_json::Value;
-use std::{env, fs, io::Write, path, process};
+use std::{env, fs, io::Write, path::Path, process};
 
 mod constants;
 
@@ -89,7 +89,7 @@ fn main() {
     let no_paging = *arg_matches
         .get_one::<bool>("no_paging")
         .expect("Argument always has a value");
-    let out_file = arg_matches.get_one::<String>("output").map(path::Path::new);
+    let out_file = arg_matches.get_one::<String>("output").map(Path::new);
     let token = base64::encode(format!("{}:{}", api_id, secret));
     let client = Client::new();
 
@@ -153,10 +153,23 @@ fn output_response(
     token: &str,
     path: &str,
     no_paging: bool,
-    out_file: Option<&path::Path>,
+    out_file: Option<&Path>,
 ) {
     let mut json_response = send_request(client, token, path);
-    // TODO: deduplicate this
+    write_to_file_or_std_out(&json_response, out_file);
+    if no_paging {
+        return;
+    }
+    let mut cursor = get_cursor_from_response(&json_response);
+    while cursor.is_some() {
+        let path = format!("{}&cursor={}", path, cursor.unwrap());
+        json_response = send_request(client, token, &path);
+        write_to_file_or_std_out(&json_response, out_file);
+        cursor = get_cursor_from_response(&json_response);
+    }
+}
+
+fn write_to_file_or_std_out(json: &Value, out_file: Option<&Path>) {
     match out_file {
         Some(path) => {
             let mut file = fs::OpenOptions::new()
@@ -165,30 +178,9 @@ fn output_response(
                 .append(true)
                 .open(path)
                 .expect("Unable to open file");
-            writeln!(file, "{}", json_response).expect("Unable to write to file");
+            writeln!(file, "{}", json).expect("Unable to write to file");
         }
-        None => println!("{}", json_response),
-    }
-    if no_paging {
-        return;
-    }
-    let mut cursor = get_cursor_from_response(&json_response);
-    while cursor.is_some() {
-        let path = format!("{}&cursor={}", path, cursor.unwrap());
-        json_response = send_request(client, token, &path);
-        match out_file {
-            Some(path) => {
-                let mut file = fs::OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .append(true)
-                    .open(path)
-                    .expect("Unable to open file");
-                writeln!(file, "{}", json_response).expect("Unable to write to file");
-            }
-            None => println!("{}", json_response),
-        }
-        cursor = get_cursor_from_response(&json_response);
+        None => println!("{}", json),
     }
 }
 
