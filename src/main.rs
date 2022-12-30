@@ -2,7 +2,7 @@ use clap::{arg, ArgAction, Command};
 use reqwest::blocking::Client;
 use reqwest::header::{ACCEPT, AUTHORIZATION};
 use serde_json::Value;
-use std::{env, process};
+use std::{env, fs, io::Write, path, process};
 
 mod constants;
 
@@ -13,13 +13,14 @@ fn main() {
         .subcommand_required(true)
         .arg_required_else_help(true)
         .arg(
-            arg!(-i --api_id <VALUE> "API ID (if not specified CENSYS_API_ID must be set)")
+            arg!(-i --api_id <ID> "API ID (if not specified CENSYS_API_ID must be set)")
                 .required(false),
         )
         .arg(
-            arg!(-s --secret <VALUE> "API secret (if not specified CENSYS_SECRET must be set)")
+            arg!(-s --secret <SECRET> "API secret (if not specified CENSYS_SECRET must be set)")
                 .required(false),
         )
+        .arg(arg!(-o --output <FILE> "Output file name").required(false))
         .arg(
             arg!(-n --no_paging "Disable paging of results")
                 .required(false)
@@ -27,7 +28,7 @@ fn main() {
         )
         .subcommand(
             Command::new("query")
-                .about("Search based on query")
+                .about("Search based on custom query")
                 .arg_required_else_help(true)
                 .arg(arg!([query] "Query using the Censys Search query language").required(true)),
         )
@@ -88,6 +89,7 @@ fn main() {
     let no_paging = *arg_matches
         .get_one::<bool>("no_paging")
         .expect("Argument always has a value");
+    let out_file = arg_matches.get_one::<String>("output").map(path::Path::new);
     let token = base64::encode(format!("{}:{}", api_id, secret));
     let client = Client::new();
 
@@ -97,14 +99,14 @@ fn main() {
                 .get_one::<String>("query")
                 .expect("Argument is required");
             let path = make_path_from_query(query);
-            print_response(&client, &token, &path, no_paging);
+            output_response(&client, &token, &path, no_paging, out_file);
         }
         Some(("ip", ip_command)) => {
             let address = ip_command
                 .get_one::<String>("address")
                 .expect("Argument is required");
             let path = make_path_from_ip(address);
-            print_response(&client, &token, &path, no_paging);
+            output_response(&client, &token, &path, no_paging, out_file);
         }
         Some(("dns", dns_command)) => {
             let dns_name = dns_command
@@ -112,7 +114,7 @@ fn main() {
                 .expect("Argument is required");
             let query = format!("dns.names: {}", dns_name);
             let path = make_path_from_query(&query);
-            print_response(&client, &token, &path, no_paging);
+            output_response(&client, &token, &path, no_paging, out_file);
         }
         Some(("asn", asn_command)) => {
             let asn = asn_command
@@ -120,7 +122,7 @@ fn main() {
                 .expect("Argument is required");
             let query = format!("autonomous_system.asn: {}", asn);
             let path = make_path_from_query(&query);
-            print_response(&client, &token, &path, no_paging);
+            output_response(&client, &token, &path, no_paging, out_file);
         }
         Some(("cert", cert_command)) => match cert_command.subcommand() {
             Some(("hosts", hosts_command)) => {
@@ -128,14 +130,14 @@ fn main() {
                     .get_one::<String>("fingerprint")
                     .expect("Argument is required");
                 let path = make_hosts_path_from_cert_fingerprint(fingerprint);
-                print_response(&client, &token, &path, no_paging);
+                output_response(&client, &token, &path, no_paging, out_file);
             }
             Some(("comments", comments_command)) => {
                 let fingerprint = comments_command
                     .get_one::<String>("fingerprint")
                     .expect("Argument is required");
                 let path = make_comments_path_from_cert_fingerprint(fingerprint);
-                print_response(&client, &token, &path, no_paging);
+                output_response(&client, &token, &path, no_paging, out_file);
             }
             _ => unreachable!("All subcommands exhausted"),
         },
@@ -146,9 +148,27 @@ fn main() {
     }
 }
 
-fn print_response(client: &Client, token: &str, path: &str, no_paging: bool) {
+fn output_response(
+    client: &Client,
+    token: &str,
+    path: &str,
+    no_paging: bool,
+    out_file: Option<&path::Path>,
+) {
     let mut json_response = send_request(client, token, path);
-    println!("{}", json_response);
+    // TODO: deduplicate this
+    match out_file {
+        Some(path) => {
+            let mut file = fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .append(true)
+                .open(path)
+                .expect("Unable to open file");
+            writeln!(file, "{}", json_response).expect("Unable to write to file");
+        }
+        None => println!("{}", json_response),
+    }
     if no_paging {
         return;
     }
@@ -156,7 +176,18 @@ fn print_response(client: &Client, token: &str, path: &str, no_paging: bool) {
     while cursor.is_some() {
         let path = format!("{}&cursor={}", path, cursor.unwrap());
         json_response = send_request(client, token, &path);
-        println!("{}", json_response);
+        match out_file {
+            Some(path) => {
+                let mut file = fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .append(true)
+                    .open(path)
+                    .expect("Unable to open file");
+                writeln!(file, "{}", json_response).expect("Unable to write to file");
+            }
+            None => println!("{}", json_response),
+        }
         cursor = get_cursor_from_response(&json_response);
     }
 }
