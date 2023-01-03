@@ -1,7 +1,11 @@
 [package]
 name = "censys-search"
 version = "0.1.0"
+description = "Censys Search API utility"
 edition = "2021"
+repository = "https://github.com/dsaxton/censys-search"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 base64 = "0.20.0"
